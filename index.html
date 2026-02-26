@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나락퀴즈쇼 - 동아리 편</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&display=swap');
+
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Do Hyeon', sans-serif;
+            overflow-x: hidden;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .narak-font {
+            font-family: 'Black Han Sans', sans-serif;
+        }
+
+        /* 사진 및 사운드 설정 영역 */
+        .upload-section {
+            margin-bottom: 20px;
+            background: #222;
+            padding: 15px 20px;
+            border-radius: 10px;
+            border: 1px dashed #555;
+            z-index: 10;
+            width: 90%;
+            max-width: 400px;
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+
+        /* 사진 컨테이너 */
+        .eye-container {
+            position: relative;
+            width: 320px;
+            height: 240px;
+            overflow: hidden;
+            border: 4px solid #fff;
+            box-shadow: 0 0 25px rgba(255, 255, 255, 0.2);
+            margin-bottom: 1.5rem;
+            background-color: #111;
+            transition: all 0.8s cubic-bezier(0.19, 1, 0.22, 1);
+        }
+
+        .eye-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: grayscale(20%);
+            transform: scale(3.5);
+            transform-origin: center center;
+            cursor: move;
+            transition: transform 0.8s cubic-bezier(0.19, 1, 0.22, 1), filter 0.8s ease;
+        }
+
+        /* 정답 공개 스타일 */
+        .revealed .eye-container {
+            width: 380px;
+            height: 450px;
+            border-color: #ff0000;
+            box-shadow: 0 0 80px rgba(255, 0, 0, 0.8);
+        }
+
+        .revealed .eye-image {
+            transform: scale(1) !important;
+            margin: 0 !important;
+            filter: grayscale(0%) contrast(1.1);
+        }
+
+        /* 나락 연출 오버레이 */
+        .impact-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(180, 0, 0, 0.95);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            animation: flash 0.08s infinite;
+        }
+
+        @keyframes flash {
+            0% { background: rgba(80, 0, 0, 0.95); }
+            50% { background: rgba(180, 0, 0, 1); }
+            100% { background: rgba(80, 0, 0, 0.95); }
+        }
+
+        .subtitle-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 90%;
+            max-width: 800px;
+            align-items: center;
+            margin-top: 20px;
+        }
+
+        .subtitle-box {
+            background: rgba(0, 0, 0, 0.95);
+            padding: 1.2rem 1.8rem;
+            border-left: 12px solid #ff0000;
+            text-align: center;
+            transform: skew(-2deg);
+            box-shadow: 10px 10px 0 rgba(0,0,0,0.7);
+            width: 100%;
+            animation: slideIn 0.5s cubic-bezier(0.23, 1, 0.32, 1) both;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-150px) skew(-2deg); }
+            to { opacity: 1; transform: translateX(0) skew(-2deg); }
+        }
+
+        .btn-option {
+            background: linear-gradient(to bottom, #2d3748, #1a202c);
+            border: 1px solid #4a5568;
+            padding: 1.2rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 1.4rem;
+            transition: all 0.2s;
+            flex: 1;
+            max-width: 220px;
+            text-align: center;
+        }
+
+        .btn-option:hover {
+            border-color: #f6ad55;
+            background: #2d3748;
+            transform: scale(1.05);
+        }
+
+        .shock-text {
+            color: #fff;
+            font-size: 6rem;
+            font-style: italic;
+            text-shadow: 8px 8px 0 #ff0000;
+            letter-spacing: -5px;
+            margin-bottom: 1rem;
+        }
+
+        .identity-label {
+            background: #ff0000;
+            color: white;
+            padding: 10px 35px;
+            font-size: 2.2rem;
+            margin-top: -20px;
+            margin-bottom: 30px;
+            transform: rotate(-3deg);
+            display: none;
+            box-shadow: 6px 6px 0 rgba(0,0,0,0.5);
+            z-index: 110;
+        }
+
+        #zoom-controls {
+            margin-top: -1rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            gap: 10px;
+        }
+
+        .control-btn {
+            background: #444;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            border: 1px solid #555;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translate(0, 0); }
+            10%, 30%, 50%, 70%, 90% { transform: translate(-6px, -3px); }
+            20%, 40%, 60%, 80% { transform: translate(6px, 3px); }
+        }
+
+        .ready-status {
+            font-size: 0.75rem;
+            color: #4ade80;
+            margin-top: 4px;
+            display: none;
+        }
+    </style>
+</head>
+<body id="main-body">
+
+    <!-- 오디오 엘리먼트 -->
+    <audio id="fail-audio"></audio>
+
+    <!-- 데이터 입력 영역 -->
+    <div class="upload-section flex flex-col items-center gap-3" id="setup-area">
+        <div class="w-full">
+            <label class="block text-xs text-gray-400 mb-1">주인공 이름 (정답)</label>
+            <input type="text" id="target-name" placeholder="이름을 입력하세요" class="w-full bg-black border border-gray-600 px-3 py-2 rounded text-white text-sm focus:border-red-500 outline-none">
+        </div>
+        
+        <div class="flex flex-col items-center gap-2 w-full pt-2">
+            <label for="file-input" class="cursor-pointer text-blue-400 hover:text-blue-300 text-sm font-bold border border-blue-900 px-4 py-2 rounded w-full text-center">
+                1. 사진 업로드
+            </label>
+            <input type="file" id="file-input" accept="image/*" class="hidden" onchange="handleFileUpload(event)">
+            <span id="img-status" class="ready-status">✔ 사진 준비됨</span>
+
+            <label for="audio-input" class="cursor-pointer text-yellow-400 hover:text-yellow-300 text-sm font-bold border border-yellow-900 px-4 py-2 rounded w-full text-center mt-1">
+                2. 사운드 파일 업로드 (실패 사운드)
+            </label>
+            <input type="file" id="audio-input" accept="audio/*" class="hidden" onchange="handleAudioUpload(event)">
+            <span id="audio-status" class="ready-status">✔ 사운드 준비됨</span>
+        </div>
+
+        <p class="text-[10px] text-gray-500 mt-2">* 두 파일 모두 업로드되면 설정창이 자동으로 닫힙니다.</p>
+    </div>
+
+    <!-- 메인 퀴즈 화면 -->
+    <div id="quiz-screen" class="flex flex-col items-center w-full px-4">
+        <h1 class="text-xl mb-4 text-gray-500 tracking-widest uppercase narak-font">Narak Quiz Show</h1>
+        
+        <div class="eye-container" id="eye-box">
+            <img id="target-image" src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=600" alt="Target Image" class="eye-image" draggable="true">
+        </div>
+
+        <div id="zoom-controls">
+            <button class="control-btn" onclick="adjustZoom(0.5)">확대 +</button>
+            <button class="control-btn" onclick="adjustZoom(-0.5)">축소 -</button>
+        </div>
+
+        <p class="text-2xl mb-10 text-center leading-relaxed">
+            "회장님, 우리 동아리에 대한 애정도를 테스트하겠습니다.<br>
+            이 눈의 주인공은 <span class="text-yellow-400 font-bold underline">누구입니까?</span>"
+        </p>
+
+        <div class="flex flex-row gap-6 w-full justify-center max-w-[480px]">
+            <button class="btn-option" onclick="processResult(true)">1. 정답</button>
+            <button class="btn-option" onclick="processResult(false)">2. 오답</button>
+        </div>
+    </div>
+
+    <!-- 나락 연출 오버레이 -->
+    <div id="impact-layer" class="impact-overlay" onclick="resetQuiz()">
+        <div id="main-impact-text" class="shock-text narak-font">충격!!!</div>
+        
+        <div id="revealed-name" class="identity-label narak-font"></div>
+
+        <div id="subtitle-container" class="subtitle-stack">
+            <!-- 자막들이 동적으로 쌓임 -->
+        </div>
+        <p class="mt-16 text-gray-300 animate-pulse text-sm">화면을 클릭하면 다시 돌아갑니다</p>
+    </div>
+
+    <script>
+        const wrongSubtitles = [
+            "[충격! 회장, 1년 같이 활동한 부원 얼굴도 몰라...]",
+            "[애정도 0% 확인. 회장에게 부원은 그저 배경일 뿐?]",
+            "[이미 마음은 사퇴 결정? 부원 이름조차 가물가물]",
+            "[사실은 부원들을 ATM처럼 번호표로 외우고 있는 중]"
+        ];
+
+        const correctSubtitles = [
+            "[경악! 특정 부원의 눈만 유심히 관찰해왔나?]",
+            "[회장의 은밀한 사심 포착? 이목구비 집착남 등극]",
+            "[애정도 200% 달성! 부원 관찰이 일상인 참리더]"
+        ];
+
+        let currentScale = 3.5;
+        let isImgReady = false;
+        let isAudioReady = false;
+
+        const targetImg = document.getElementById('target-image');
+        const body = document.getElementById('main-body');
+        const setupArea = document.getElementById('setup-area');
+        const failAudio = document.getElementById('fail-audio');
+
+        function checkSetupComplete() {
+            if (isImgReady && isAudioReady) {
+                setTimeout(() => {
+                    setupArea.style.opacity = '0';
+                    setupArea.style.transform = 'translateY(-20px)';
+                    setTimeout(() => {
+                        setupArea.style.display = 'none';
+                    }, 500);
+                }, 800);
+            }
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    targetImg.src = e.target.result;
+                    targetImg.style.transform = `scale(${currentScale})`;
+                    targetImg.style.marginTop = "0px";
+                    targetImg.style.marginLeft = "0px";
+                    isImgReady = true;
+                    document.getElementById('img-status').style.display = 'block';
+                    checkSetupComplete();
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function handleAudioUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                failAudio.src = url;
+                failAudio.load();
+                isAudioReady = true;
+                document.getElementById('audio-status').style.display = 'block';
+                checkSetupComplete();
+            }
+        }
+
+        function adjustZoom(amount) {
+            currentScale += amount;
+            if (currentScale < 1) currentScale = 1;
+            targetImg.style.transform = `scale(${currentScale})`;
+        }
+
+        let isDragging = false;
+        let startX, startY;
+        let imgLeft = 0, imgTop = 0;
+
+        targetImg.addEventListener('mousedown', (e) => {
+            if(body.classList.contains('revealed')) return;
+            isDragging = true;
+            startX = e.clientX - imgLeft;
+            startY = e.clientY - imgTop;
+            e.preventDefault();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            imgLeft = e.clientX - startX;
+            imgTop = e.clientY - startY;
+            targetImg.style.marginLeft = `${imgLeft}px`;
+            targetImg.style.marginTop = `${imgTop}px`;
+        });
+
+        window.addEventListener('mouseup', () => { isDragging = false; });
+
+        function processResult(isCorrect) {
+            const layer = document.getElementById('impact-layer');
+            const container = document.getElementById('subtitle-container');
+            const nameDisplay = document.getElementById('revealed-name');
+            const mainText = document.getElementById('main-impact-text');
+            const inputName = document.getElementById('target-name').value || "정체불명의 부원";
+            
+            container.innerHTML = '';
+            body.classList.add('revealed');
+
+            // 오디오 재생 시도
+            if (failAudio.src) {
+                failAudio.currentTime = 0;
+                failAudio.play().catch(e => {
+                    console.error("오디오 재생 실패:", e);
+                    // 브라우저가 사용자 상호작용 전에 재생하는 것을 막을 수 있으므로 대비
+                });
+            }
+
+            if (isCorrect) {
+                mainText.innerText = "경악!!!";
+                mainText.style.textShadow = "8px 8px 0 #0055ff"; 
+            } else {
+                mainText.innerText = "충격!!!";
+                mainText.style.textShadow = "8px 8px 0 #ff0000";
+            }
+
+            nameDisplay.innerText = `정답: ${inputName}`;
+            nameDisplay.style.display = 'block';
+
+            const list = isCorrect ? correctSubtitles : wrongSubtitles;
+            const INITIAL_DELAY = 1000; 
+
+            list.forEach((text, index) => {
+                setTimeout(() => {
+                    const box = document.createElement('div');
+                    box.className = 'subtitle-box';
+                    box.innerHTML = `<h2 class="text-xl md:text-3xl text-white font-bold">${text}</h2>`;
+                    container.appendChild(box);
+                    document.body.style.animation = "shake 0.3s cubic-bezier(.36,.07,.19,.97) both";
+                    setTimeout(() => { document.body.style.animation = ""; }, 300);
+                }, INITIAL_DELAY + (index * 600)); 
+            });
+
+            layer.style.display = 'flex';
+        }
+
+        function resetQuiz() {
+            document.getElementById('impact-layer').style.display = 'none';
+            body.classList.remove('revealed');
+            document.getElementById('revealed-name').style.display = 'none';
+            failAudio.pause();
+        }
+    </script>
+</body>
+</html>
