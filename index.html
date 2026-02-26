@@ -225,7 +225,7 @@
             <div id="save-spinner" class="loading-spinner"></div>
         </button>
         
-        <p id="load-msg" class="text-[11px] text-gray-400 text-center">파일 용량이 커도 IndexedDB에 안전하게 저장됩니다.</p>
+        <p id="load-msg" class="text-[11px] text-gray-400 text-center">파일 용량이 커도 IndexedDB에 안전하게 저장되어 유지됩니다.</p>
         <button onclick="clearAllData()" class="text-[10px] text-gray-600 hover:text-red-500 underline">저장된 모든 데이터 삭제하기</button>
     </div>
 
@@ -328,14 +328,20 @@
 
         // Init on load
         window.addEventListener('DOMContentLoaded', async () => {
+            // 로딩 메시지 표시용
+            const loadMsg = document.getElementById('load-msg');
+            loadMsg.innerText = "데이터를 불러오는 중입니다...";
+
             const name = await getFromDB('target_name');
             const img = await getFromDB('target_image');
             const audio = await getFromDB('target_audio');
 
             if (name && img) {
                 document.getElementById('target-name').value = name;
-                applyData(name, img, audio);
+                await applyData(name, img, audio);
                 startQuiz();
+            } else {
+                loadMsg.innerText = "설정된 데이터가 없습니다. 새로 등록해주세요.";
             }
         });
 
@@ -375,7 +381,7 @@
             }
 
             saveSpinner.style.display = 'block';
-            saveText.innerText = "파일 최적화 및 저장 중...";
+            saveText.innerText = "파일 인코딩 및 저장 중...";
 
             try {
                 // Save Name
@@ -395,11 +401,11 @@
                     await saveToDB('target_audio', audioData);
                 }
 
-                applyData(nameInput, imgData, audioData);
+                await applyData(nameInput, imgData, audioData);
                 startQuiz();
             } catch (err) {
                 console.error(err);
-                alert("저장 중 오류가 발생했습니다. 파일 용량을 확인해주세요.");
+                alert("저장 중 오류가 발생했습니다. 브라우저 저장 용량 초과일 수 있습니다.");
             } finally {
                 saveSpinner.style.display = 'none';
                 saveText.innerText = "데이터 저장 및 시작하기";
