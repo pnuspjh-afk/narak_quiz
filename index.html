@@ -226,6 +226,7 @@
         </button>
         
         <p id="load-msg" class="text-[11px] text-gray-400 text-center">저장된 데이터가 있으면 자동으로 불러옵니다.</p>
+        <button onclick="clearLocalStorage()" class="text-[10px] text-gray-600 hover:text-red-500 underline">저장된 로컬 데이터 삭제하기</button>
     </div>
 
     <!-- 메인 퀴즈 화면 (기본적으로 숨김) -->
@@ -273,7 +274,7 @@
         
         // GitHub 환경 등에서 실행될 때 설정값이 없을 경우를 대비한 가이드
         if (typeof __firebase_config === 'undefined') {
-            console.warn("Firebase config is missing. To use persistence on GitHub, you must manually provide a Firebase config object.");
+            console.warn("Firebase config is missing. To use persistence on GitHub, we'll use localStorage.");
         } else {
             try {
                 const firebaseConfig = JSON.parse(__firebase_config);
@@ -311,6 +312,11 @@
             }
         };
 
+        // 초기 실행: 로컬 스토리지에서 먼저 데이터 로드 시도
+        window.addEventListener('DOMContentLoaded', () => {
+            loadFromLocalStorage();
+        });
+
         if (auth) {
             initAuth();
             onAuthStateChanged(auth, (u) => {
@@ -321,7 +327,42 @@
             });
         }
 
-        // Cloud Save Logic
+        // --- 데이터 관리 로직 ---
+
+        // 로컬 스토리지에 데이터 저장
+        function saveToLocalStorage(name, img, audio) {
+            const quizData = {
+                name: name,
+                image: img,
+                audio: audio,
+                savedAt: Date.now()
+            };
+            localStorage.setItem('narak_quiz_data', JSON.stringify(quizData));
+        }
+
+        // 로컬 스토리지에서 데이터 로드
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('narak_quiz_data');
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    document.getElementById('target-name').value = data.name || "";
+                    applyData(data.name, data.image, data.audio);
+                    document.getElementById('load-msg').innerText = "로컬 저장소에서 데이터를 불러왔습니다.";
+                } catch (e) {
+                    console.error("Local load error:", e);
+                }
+            }
+        }
+
+        window.clearLocalStorage = function() {
+            if(confirm("저장된 모든 데이터를 삭제하시겠습니까?")) {
+                localStorage.removeItem('narak_quiz_data');
+                location.reload();
+            }
+        };
+
+        // Cloud Save Logic (로컬 저장 병행)
         const saveAllToCloud = async function() {
             const nameInput = document.getElementById('target-name').value;
             const imgFile = document.getElementById('file-input').files[0];
@@ -332,33 +373,27 @@
                 return;
             }
 
-            // Firebase가 설정되지 않은 경우 (GitHub 환경 등) 로컬 전용으로 동작
+            // 이미지 및 오디오 데이터 변환
+            let imgData = targetImg.src;
+            if (imgFile) imgData = await fileToBase64(imgFile);
+            let audioData = failAudio.src;
+            if (audioFile) audioData = await fileToBase64(audioFile);
+
+            // 1. 로컬 저장소 우선 저장 (오프라인/깃허브 지원)
+            saveToLocalStorage(nameInput, imgData, audioData);
+
+            // 2. Firebase가 설정되지 않은 경우 로컬 전용으로 즉시 시작
             if (!auth || !db || !user) {
                 console.log("Firebase not configured. Running in local-only mode.");
-                let imgData = targetImg.src;
-                if (imgFile) imgData = await fileToBase64(imgFile);
-                let audioData = failAudio.src;
-                if (audioFile) audioData = await fileToBase64(audioFile);
-                
                 applyData(nameInput, imgData, audioData);
                 startQuiz();
                 return;
             }
 
             saveSpinner.style.display = 'block';
-            saveText.innerText = "저장 중...";
+            saveText.innerText = "클라우드 저장 중...";
 
             try {
-                let imgData = targetImg.src;
-                if (imgFile) {
-                    imgData = await fileToBase64(imgFile);
-                }
-
-                let audioData = failAudio.src;
-                if (audioFile) {
-                    audioData = await fileToBase64(audioFile);
-                }
-
                 const docPath = doc(db, 'artifacts', appId, 'users', user.uid, 'quizData', 'current');
                 await setDoc(docPath, {
                     name: nameInput,
@@ -371,7 +406,9 @@
                 startQuiz();
             } catch (err) {
                 console.error("Cloud save failed:", err);
-                alert("데이터 저장 중 오류가 발생했습니다. (Firebase 권한 또는 설정 확인 필요)");
+                // 클라우드 저장 실패해도 로컬엔 저장되었으므로 퀴즈 시작
+                applyData(nameInput, imgData, audioData);
+                startQuiz();
             } finally {
                 saveSpinner.style.display = 'none';
                 saveText.innerText = "데이터 저장 및 시작하기";
@@ -393,9 +430,11 @@
                 
                 if (snap.exists()) {
                     const data = snap.data();
+                    // 클라우드 데이터가 더 최신일 경우 덮어쓰기 (혹은 로컬 데이터가 없을 때)
                     document.getElementById('target-name').value = data.name || "";
                     applyData(data.name, data.image, data.audio);
-                    document.getElementById('load-msg').innerText = "저장된 데이터를 불러왔습니다.";
+                    saveToLocalStorage(data.name, data.image, data.audio); // 로컬 동기화
+                    document.getElementById('load-msg').innerText = "클라우드 동기화 완료.";
                 }
             } catch (err) {
                 console.warn("Cloud load failed (expected in local dev):", err);
@@ -403,8 +442,10 @@
         }
 
         function applyData(name, img, audio) {
-            if (img && img !== window.location.href) targetImg.src = img;
-            if (audio && audio !== window.location.href) {
+            if (img && img !== window.location.href && !img.includes('localhost')) {
+                targetImg.src = img;
+            }
+            if (audio && audio !== window.location.href && !audio.includes('localhost')) {
                 failAudio.src = audio;
                 failAudio.load();
             }
