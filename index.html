@@ -198,10 +198,10 @@
 </head>
 <body id="main-body">
 
-    <!-- 오디오 엘리먼트 -->
+    <!-- Audio Element -->
     <audio id="fail-audio"></audio>
 
-    <!-- 데이터 입력 및 저장 영역 -->
+    <!-- Setup Area -->
     <div class="upload-section flex flex-col items-center gap-4" id="setup-area">
         <h2 class="text-xl narak-font text-yellow-500">퀴즈 데이터 설정</h2>
         
@@ -225,11 +225,11 @@
             <div id="save-spinner" class="loading-spinner"></div>
         </button>
         
-        <p id="load-msg" class="text-[11px] text-gray-400 text-center">저장된 데이터가 있으면 자동으로 불러옵니다.</p>
-        <button onclick="clearLocalStorage()" class="text-[10px] text-gray-600 hover:text-red-500 underline">저장된 로컬 데이터 삭제하기</button>
+        <p id="load-msg" class="text-[11px] text-gray-400 text-center">파일 용량이 커도 IndexedDB에 안전하게 저장됩니다.</p>
+        <button onclick="clearAllData()" class="text-[10px] text-gray-600 hover:text-red-500 underline">저장된 모든 데이터 삭제하기</button>
     </div>
 
-    <!-- 메인 퀴즈 화면 (기본적으로 숨김) -->
+    <!-- Quiz Screen -->
     <div id="quiz-screen" class="hidden flex flex-col items-center w-full px-4">
         <h1 class="text-xl mb-4 text-gray-500 tracking-widest uppercase narak-font">Narak Quiz Show</h1>
         
@@ -255,7 +255,7 @@
         <button onclick="showSetup()" class="mt-8 text-gray-600 text-sm hover:underline">설정 다시하기</button>
     </div>
 
-    <!-- 나락 연출 오버레이 -->
+    <!-- Impact Overlay -->
     <div id="impact-layer" class="impact-overlay" onclick="resetQuiz()">
         <div id="main-impact-text" class="shock-text narak-font">충격!!!</div>
         <div id="revealed-name" class="identity-label narak-font"></div>
@@ -264,32 +264,60 @@
     </div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // IndexedDB Wrapper for large file storage
+        const DB_NAME = 'NarakQuizDB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'quiz_assets';
 
-        // Firebase Configuration
-        let app, auth, db;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'narak-quiz-default';
-        
-        // GitHub 환경 등에서 실행될 때 설정값이 없을 경우를 대비한 가이드
-        if (typeof __firebase_config === 'undefined') {
-            console.warn("Firebase config is missing. To use persistence on GitHub, we'll use localStorage.");
-        } else {
-            try {
-                const firebaseConfig = JSON.parse(__firebase_config);
-                app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-            } catch (e) {
-                console.error("Firebase initialization failed:", e);
-            }
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                    }
+                };
+                request.onsuccess = (e) => resolve(e.target.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
         }
 
-        let user = null;
-        let currentScale = 3.5;
+        async function saveToDB(key, data) {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                store.put(data, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
 
-        // UI References
+        async function getFromDB(key) {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                const request = store.get(key);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function clearDB() {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                store.clear();
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        // Global State
+        let currentScale = 3.5;
         const targetImg = document.getElementById('target-image');
         const failAudio = document.getElementById('fail-audio');
         const setupArea = document.getElementById('setup-area');
@@ -298,154 +326,22 @@
         const saveText = document.getElementById('save-text');
         const saveBtn = document.getElementById('save-btn');
 
-        // Auth Init
-        const initAuth = async () => {
-            if (!auth) return;
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (err) {
-                console.error("Firebase authentication error:", err);
-            }
-        };
+        // Init on load
+        window.addEventListener('DOMContentLoaded', async () => {
+            const name = await getFromDB('target_name');
+            const img = await getFromDB('target_image');
+            const audio = await getFromDB('target_audio');
 
-        // 초기 실행: 로컬 스토리지에서 먼저 데이터 로드 시도
-        window.addEventListener('DOMContentLoaded', () => {
-            loadFromLocalStorage();
+            if (name && img) {
+                document.getElementById('target-name').value = name;
+                applyData(name, img, audio);
+                startQuiz();
+            }
         });
 
-        if (auth) {
-            initAuth();
-            onAuthStateChanged(auth, (u) => {
-                if (u) {
-                    user = u;
-                    loadDataFromCloud();
-                }
-            });
-        }
-
-        // --- 데이터 관리 로직 ---
-
-        // 로컬 스토리지에 데이터 저장
-        function saveToLocalStorage(name, img, audio) {
-            const quizData = {
-                name: name,
-                image: img,
-                audio: audio,
-                savedAt: Date.now()
-            };
-            localStorage.setItem('narak_quiz_data', JSON.stringify(quizData));
-        }
-
-        // 로컬 스토리지에서 데이터 로드
-        function loadFromLocalStorage() {
-            const saved = localStorage.getItem('narak_quiz_data');
-            if (saved) {
-                try {
-                    const data = JSON.parse(saved);
-                    document.getElementById('target-name').value = data.name || "";
-                    applyData(data.name, data.image, data.audio);
-                    document.getElementById('load-msg').innerText = "로컬 저장소에서 데이터를 불러왔습니다.";
-                } catch (e) {
-                    console.error("Local load error:", e);
-                }
-            }
-        }
-
-        window.clearLocalStorage = function() {
-            if(confirm("저장된 모든 데이터를 삭제하시겠습니까?")) {
-                localStorage.removeItem('narak_quiz_data');
-                location.reload();
-            }
-        };
-
-        // Cloud Save Logic (로컬 저장 병행)
-        const saveAllToCloud = async function() {
-            const nameInput = document.getElementById('target-name').value;
-            const imgFile = document.getElementById('file-input').files[0];
-            const audioFile = document.getElementById('audio-input').files[0];
-
-            if (!nameInput) {
-                alert("이름을 입력해주세요.");
-                return;
-            }
-
-            // 이미지 및 오디오 데이터 변환
-            let imgData = targetImg.src;
-            if (imgFile) imgData = await fileToBase64(imgFile);
-            let audioData = failAudio.src;
-            if (audioFile) audioData = await fileToBase64(audioFile);
-
-            // 1. 로컬 저장소 우선 저장 (오프라인/깃허브 지원)
-            saveToLocalStorage(nameInput, imgData, audioData);
-
-            // 2. Firebase가 설정되지 않은 경우 로컬 전용으로 즉시 시작
-            if (!auth || !db || !user) {
-                console.log("Firebase not configured. Running in local-only mode.");
-                applyData(nameInput, imgData, audioData);
-                startQuiz();
-                return;
-            }
-
-            saveSpinner.style.display = 'block';
-            saveText.innerText = "클라우드 저장 중...";
-
-            try {
-                const docPath = doc(db, 'artifacts', appId, 'users', user.uid, 'quizData', 'current');
-                await setDoc(docPath, {
-                    name: nameInput,
-                    image: imgData,
-                    audio: audioData,
-                    updatedAt: Date.now()
-                });
-
-                applyData(nameInput, imgData, audioData);
-                startQuiz();
-            } catch (err) {
-                console.error("Cloud save failed:", err);
-                // 클라우드 저장 실패해도 로컬엔 저장되었으므로 퀴즈 시작
-                applyData(nameInput, imgData, audioData);
-                startQuiz();
-            } finally {
-                saveSpinner.style.display = 'none';
-                saveText.innerText = "데이터 저장 및 시작하기";
-            }
-        };
-
-        // 전역 접근성 확보
-        window.saveAllToCloud = saveAllToCloud;
-        if (saveBtn) {
-            saveBtn.onclick = saveAllToCloud;
-        }
-
-        // Cloud Load Logic
-        async function loadDataFromCloud() {
-            if (!db || !user) return;
-            try {
-                const docPath = doc(db, 'artifacts', appId, 'users', user.uid, 'quizData', 'current');
-                const snap = await getDoc(docPath);
-                
-                if (snap.exists()) {
-                    const data = snap.data();
-                    // 클라우드 데이터가 더 최신일 경우 덮어쓰기 (혹은 로컬 데이터가 없을 때)
-                    document.getElementById('target-name').value = data.name || "";
-                    applyData(data.name, data.image, data.audio);
-                    saveToLocalStorage(data.name, data.image, data.audio); // 로컬 동기화
-                    document.getElementById('load-msg').innerText = "클라우드 동기화 완료.";
-                }
-            } catch (err) {
-                console.warn("Cloud load failed (expected in local dev):", err);
-            }
-        }
-
-        function applyData(name, img, audio) {
-            if (img && img !== window.location.href && !img.includes('localhost')) {
-                targetImg.src = img;
-            }
-            if (audio && audio !== window.location.href && !audio.includes('localhost')) {
+        async function applyData(name, img, audio) {
+            if (img) targetImg.src = img;
+            if (audio) {
                 failAudio.src = audio;
                 failAudio.load();
             }
@@ -461,6 +357,57 @@
             quizScreen.classList.add('hidden');
         };
 
+        window.clearAllData = async function() {
+            if(confirm("모든 사진과 사운드 데이터를 영구적으로 삭제하시겠습니까?")) {
+                await clearDB();
+                location.reload();
+            }
+        };
+
+        const saveAllData = async function() {
+            const nameInput = document.getElementById('target-name').value;
+            const imgFile = document.getElementById('file-input').files[0];
+            const audioFile = document.getElementById('audio-input').files[0];
+
+            if (!nameInput) {
+                alert("주인공 이름을 입력해주세요.");
+                return;
+            }
+
+            saveSpinner.style.display = 'block';
+            saveText.innerText = "파일 최적화 및 저장 중...";
+
+            try {
+                // Save Name
+                await saveToDB('target_name', nameInput);
+
+                // Process and Save Image
+                let imgData = targetImg.src;
+                if (imgFile) {
+                    imgData = await fileToBase64(imgFile);
+                    await saveToDB('target_image', imgData);
+                }
+
+                // Process and Save Audio
+                let audioData = failAudio.src;
+                if (audioFile) {
+                    audioData = await fileToBase64(audioFile);
+                    await saveToDB('target_audio', audioData);
+                }
+
+                applyData(nameInput, imgData, audioData);
+                startQuiz();
+            } catch (err) {
+                console.error(err);
+                alert("저장 중 오류가 발생했습니다. 파일 용량을 확인해주세요.");
+            } finally {
+                saveSpinner.style.display = 'none';
+                saveText.innerText = "데이터 저장 및 시작하기";
+            }
+        };
+
+        if (saveBtn) saveBtn.onclick = saveAllData;
+
         function fileToBase64(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -470,20 +417,7 @@
             });
         }
 
-        // --- Global Quiz UI Logic ---
-        const wrongSubtitles = [
-            "[충격! 회장, 1년 같이 활동한 부원 얼굴도 몰라...]",
-            "[애정도 0% 확인. 회장에게 부원은 그저 배경일 뿐?]",
-            "[이미 마음은 사퇴 결정? 부원 이름조차 가물가물]",
-            "[사실은 부원들을 ATM처럼 번호표로 외우고 있는 중]"
-        ];
-
-        const correctSubtitles = [
-            "[경악! 특정 부원의 눈만 유심히 관찰해왔나?]",
-            "[회장의 은밀한 사심 포착? 이목구비 집착남 등극]",
-            "[애정도 200% 달성! 부원 관찰이 일상인 참리더]"
-        ];
-
+        // --- UI Logic ---
         window.adjustZoom = function(amount) {
             currentScale += amount;
             if (currentScale < 1) currentScale = 1;
@@ -511,6 +445,19 @@
         });
 
         window.addEventListener('mouseup', () => { isDragging = false; });
+
+        const wrongSubtitles = [
+            "[충격! 회장, 1년 같이 활동한 부원 얼굴도 몰라...]",
+            "[애정도 0% 확인. 회장에게 부원은 그저 배경일 뿐?]",
+            "[이미 마음은 사퇴 결정? 부원 이름조차 가물가물]",
+            "[사실은 부원들을 ATM처럼 번호표로 외우고 있는 중]"
+        ];
+
+        const correctSubtitles = [
+            "[경악! 특정 부원의 눈만 유심히 관찰해왔나?]",
+            "[회장의 은밀한 사심 포착? 이목구비 집착남 등극]",
+            "[애정도 200% 달성! 부원 관찰이 일상인 참리더]"
+        ];
 
         window.processResult = function(isCorrect) {
             const layer = document.getElementById('impact-layer');
