@@ -24,20 +24,18 @@
             font-family: 'Black Han Sans', sans-serif;
         }
 
-        /* 사진 및 사운드 설정 영역 */
         .upload-section {
             margin-bottom: 20px;
             background: #222;
-            padding: 15px 20px;
-            border-radius: 10px;
-            border: 1px dashed #555;
+            padding: 20px;
+            border-radius: 12px;
+            border: 2px solid #444;
             z-index: 10;
             width: 90%;
-            max-width: 400px;
-            transition: opacity 0.5s ease, transform 0.5s ease;
+            max-width: 450px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
         }
 
-        /* 사진 컨테이너 */
         .eye-container {
             position: relative;
             width: 320px;
@@ -61,7 +59,6 @@
             transition: transform 0.8s cubic-bezier(0.19, 1, 0.22, 1), filter 0.8s ease;
         }
 
-        /* 정답 공개 스타일 */
         .revealed .eye-container {
             width: 380px;
             height: 450px;
@@ -75,7 +72,6 @@
             filter: grayscale(0%) contrast(1.1);
         }
 
-        /* 나락 연출 오버레이 */
         .impact-overlay {
             position: fixed;
             top: 0;
@@ -184,11 +180,19 @@
             20%, 40%, 60%, 80% { transform: translate(6px, 3px); }
         }
 
-        .ready-status {
-            font-size: 0.75rem;
-            color: #4ade80;
-            margin-top: 4px;
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #fff;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
             display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -197,36 +201,39 @@
     <!-- 오디오 엘리먼트 -->
     <audio id="fail-audio"></audio>
 
-    <!-- 데이터 입력 영역 -->
-    <div class="upload-section flex flex-col items-center gap-3" id="setup-area">
+    <!-- 데이터 입력 및 저장 영역 -->
+    <div class="upload-section flex flex-col items-center gap-4" id="setup-area">
+        <h2 class="text-xl narak-font text-yellow-500">퀴즈 데이터 설정</h2>
+        
         <div class="w-full">
-            <label class="block text-xs text-gray-400 mb-1">주인공 이름 (정답)</label>
+            <label class="block text-xs text-gray-400 mb-1">1. 주인공 이름</label>
             <input type="text" id="target-name" placeholder="이름을 입력하세요" class="w-full bg-black border border-gray-600 px-3 py-2 rounded text-white text-sm focus:border-red-500 outline-none">
         </div>
         
-        <div class="flex flex-col items-center gap-2 w-full pt-2">
-            <label for="file-input" class="cursor-pointer text-blue-400 hover:text-blue-300 text-sm font-bold border border-blue-900 px-4 py-2 rounded w-full text-center">
-                1. 사진 업로드
-            </label>
-            <input type="file" id="file-input" accept="image/*" class="hidden" onchange="handleFileUpload(event)">
-            <span id="img-status" class="ready-status">✔ 사진 준비됨</span>
-
-            <label for="audio-input" class="cursor-pointer text-yellow-400 hover:text-yellow-300 text-sm font-bold border border-yellow-900 px-4 py-2 rounded w-full text-center mt-1">
-                2. 사운드 파일 업로드 (실패 사운드)
-            </label>
-            <input type="file" id="audio-input" accept="audio/*" class="hidden" onchange="handleAudioUpload(event)">
-            <span id="audio-status" class="ready-status">✔ 사운드 준비됨</span>
+        <div class="w-full">
+            <label class="block text-xs text-gray-400 mb-1">2. 사진 파일 선택</label>
+            <input type="file" id="file-input" accept="image/*" class="w-full bg-black border border-gray-600 px-3 py-1 rounded text-white text-sm cursor-pointer">
         </div>
 
-        <p class="text-[10px] text-gray-500 mt-2">* 두 파일 모두 업로드되면 설정창이 자동으로 닫힙니다.</p>
+        <div class="w-full">
+            <label class="block text-xs text-gray-400 mb-1">3. 사운드 파일 선택 (미션실패.mp3)</label>
+            <input type="file" id="audio-input" accept="audio/*" class="w-full bg-black border border-gray-600 px-3 py-1 rounded text-white text-sm cursor-pointer">
+        </div>
+
+        <button id="save-btn" class="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2">
+            <span id="save-text">데이터 저장 및 시작하기</span>
+            <div id="save-spinner" class="loading-spinner"></div>
+        </button>
+        
+        <p id="load-msg" class="text-[11px] text-gray-400 text-center">저장된 데이터가 있으면 자동으로 불러옵니다.</p>
     </div>
 
-    <!-- 메인 퀴즈 화면 -->
-    <div id="quiz-screen" class="flex flex-col items-center w-full px-4">
+    <!-- 메인 퀴즈 화면 (기본적으로 숨김) -->
+    <div id="quiz-screen" class="hidden flex flex-col items-center w-full px-4">
         <h1 class="text-xl mb-4 text-gray-500 tracking-widest uppercase narak-font">Narak Quiz Show</h1>
         
         <div class="eye-container" id="eye-box">
-            <img id="target-image" src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=600" alt="Target Image" class="eye-image" draggable="true">
+            <img id="target-image" src="" alt="Target Image" class="eye-image" draggable="true">
         </div>
 
         <div id="zoom-controls">
@@ -243,21 +250,169 @@
             <button class="btn-option" onclick="processResult(true)">1. 정답</button>
             <button class="btn-option" onclick="processResult(false)">2. 오답</button>
         </div>
+        
+        <button onclick="showSetup()" class="mt-8 text-gray-600 text-sm hover:underline">설정 다시하기</button>
     </div>
 
     <!-- 나락 연출 오버레이 -->
     <div id="impact-layer" class="impact-overlay" onclick="resetQuiz()">
         <div id="main-impact-text" class="shock-text narak-font">충격!!!</div>
-        
         <div id="revealed-name" class="identity-label narak-font"></div>
-
-        <div id="subtitle-container" class="subtitle-stack">
-            <!-- 자막들이 동적으로 쌓임 -->
-        </div>
+        <div id="subtitle-container" class="subtitle-stack"></div>
         <p class="mt-16 text-gray-300 animate-pulse text-sm">화면을 클릭하면 다시 돌아갑니다</p>
     </div>
 
-    <script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Configuration
+        let app, auth, db;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'narak-quiz-default';
+        
+        try {
+            const firebaseConfig = JSON.parse(__firebase_config);
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch (e) {
+            console.error("Firebase init error:", e);
+        }
+
+        let user = null;
+        let currentScale = 3.5;
+
+        // UI References
+        const targetImg = document.getElementById('target-image');
+        const failAudio = document.getElementById('fail-audio');
+        const setupArea = document.getElementById('setup-area');
+        const quizScreen = document.getElementById('quiz-screen');
+        const saveSpinner = document.getElementById('save-spinner');
+        const saveText = document.getElementById('save-text');
+        const saveBtn = document.getElementById('save-btn');
+
+        // Auth Init with Priority to Custom Token
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.error("Auth failed:", err);
+            }
+        };
+
+        initAuth();
+
+        onAuthStateChanged(auth, (u) => {
+            if (u) {
+                user = u;
+                loadDataFromCloud();
+            }
+        });
+
+        // Cloud Save Logic
+        const saveAllToCloud = async function() {
+            if (!user) {
+                alert("사용자 인증 중입니다. 잠시만 기다려주세요.");
+                return;
+            }
+            
+            const nameInput = document.getElementById('target-name').value;
+            const imgFile = document.getElementById('file-input').files[0];
+            const audioFile = document.getElementById('audio-input').files[0];
+
+            if (!nameInput) {
+                alert("이름을 입력해주세요.");
+                return;
+            }
+
+            saveSpinner.style.display = 'block';
+            saveText.innerText = "저장 중...";
+
+            try {
+                let imgData = targetImg.src;
+                if (imgFile) {
+                    imgData = await fileToBase64(imgFile);
+                }
+
+                let audioData = failAudio.src;
+                if (audioFile) {
+                    audioData = await fileToBase64(audioFile);
+                }
+
+                const docPath = doc(db, 'artifacts', appId, 'users', user.uid, 'quizData', 'current');
+                await setDoc(docPath, {
+                    name: nameInput,
+                    image: imgData,
+                    audio: audioData,
+                    updatedAt: Date.now()
+                });
+
+                applyData(nameInput, imgData, audioData);
+                startQuiz();
+            } catch (err) {
+                console.error("저장 실패:", err);
+                alert("데이터 저장 중 오류가 발생했습니다.");
+            } finally {
+                saveSpinner.style.display = 'none';
+                saveText.innerText = "데이터 저장 및 시작하기";
+            }
+        };
+
+        // Attach to window for onclick access
+        window.saveAllToCloud = saveAllToCloud;
+        saveBtn.addEventListener('click', saveAllToCloud);
+
+        // Cloud Load Logic
+        async function loadDataFromCloud() {
+            if (!user) return;
+            try {
+                const docPath = doc(db, 'artifacts', appId, 'users', user.uid, 'quizData', 'current');
+                const snap = await getDoc(docPath);
+                
+                if (snap.exists()) {
+                    const data = snap.data();
+                    document.getElementById('target-name').value = data.name;
+                    applyData(data.name, data.image, data.audio);
+                    document.getElementById('load-msg').innerText = "이전에 저장된 데이터를 불러왔습니다.";
+                }
+            } catch (err) {
+                console.error("불러오기 실패:", err);
+            }
+        }
+
+        function applyData(name, img, audio) {
+            if (img) targetImg.src = img;
+            if (audio) {
+                failAudio.src = audio;
+                failAudio.load();
+            }
+        }
+
+        function startQuiz() {
+            setupArea.style.display = 'none';
+            quizScreen.classList.remove('hidden');
+        }
+
+        window.showSetup = function() {
+            setupArea.style.display = 'flex';
+            quizScreen.classList.add('hidden');
+        };
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // Global Quiz Functions
         const wrongSubtitles = [
             "[충격! 회장, 1년 같이 활동한 부원 얼굴도 몰라...]",
             "[애정도 0% 확인. 회장에게 부원은 그저 배경일 뿐?]",
@@ -271,68 +426,18 @@
             "[애정도 200% 달성! 부원 관찰이 일상인 참리더]"
         ];
 
-        let currentScale = 3.5;
-        let isImgReady = false;
-        let isAudioReady = false;
-
-        const targetImg = document.getElementById('target-image');
-        const body = document.getElementById('main-body');
-        const setupArea = document.getElementById('setup-area');
-        const failAudio = document.getElementById('fail-audio');
-
-        function checkSetupComplete() {
-            if (isImgReady && isAudioReady) {
-                setTimeout(() => {
-                    setupArea.style.opacity = '0';
-                    setupArea.style.transform = 'translateY(-20px)';
-                    setTimeout(() => {
-                        setupArea.style.display = 'none';
-                    }, 500);
-                }, 800);
-            }
-        }
-
-        function handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    targetImg.src = e.target.result;
-                    targetImg.style.transform = `scale(${currentScale})`;
-                    targetImg.style.marginTop = "0px";
-                    targetImg.style.marginLeft = "0px";
-                    isImgReady = true;
-                    document.getElementById('img-status').style.display = 'block';
-                    checkSetupComplete();
-                };
-                reader.readAsDataURL(file);
-            }
-        }
-
-        function handleAudioUpload(event) {
-            const file = event.target.files[0];
-            if (file) {
-                const url = URL.createObjectURL(file);
-                failAudio.src = url;
-                failAudio.load();
-                isAudioReady = true;
-                document.getElementById('audio-status').style.display = 'block';
-                checkSetupComplete();
-            }
-        }
-
-        function adjustZoom(amount) {
+        window.adjustZoom = function(amount) {
             currentScale += amount;
             if (currentScale < 1) currentScale = 1;
             targetImg.style.transform = `scale(${currentScale})`;
-        }
+        };
 
         let isDragging = false;
         let startX, startY;
         let imgLeft = 0, imgTop = 0;
 
         targetImg.addEventListener('mousedown', (e) => {
-            if(body.classList.contains('revealed')) return;
+            if(document.body.classList.contains('revealed')) return;
             isDragging = true;
             startX = e.clientX - imgLeft;
             startY = e.clientY - imgTop;
@@ -349,23 +454,19 @@
 
         window.addEventListener('mouseup', () => { isDragging = false; });
 
-        function processResult(isCorrect) {
+        window.processResult = function(isCorrect) {
             const layer = document.getElementById('impact-layer');
             const container = document.getElementById('subtitle-container');
             const nameDisplay = document.getElementById('revealed-name');
             const mainText = document.getElementById('main-impact-text');
-            const inputName = document.getElementById('target-name').value || "정체불명의 부원";
+            const storedName = document.getElementById('target-name').value || "부원";
             
             container.innerHTML = '';
-            body.classList.add('revealed');
+            document.body.classList.add('revealed');
 
-            // 오디오 재생 시도
-            if (failAudio.src) {
+            if (failAudio.src && failAudio.src.startsWith('data:')) {
                 failAudio.currentTime = 0;
-                failAudio.play().catch(e => {
-                    console.error("오디오 재생 실패:", e);
-                    // 브라우저가 사용자 상호작용 전에 재생하는 것을 막을 수 있으므로 대비
-                });
+                failAudio.play().catch(console.error);
             }
 
             if (isCorrect) {
@@ -376,12 +477,10 @@
                 mainText.style.textShadow = "8px 8px 0 #ff0000";
             }
 
-            nameDisplay.innerText = `정답: ${inputName}`;
+            nameDisplay.innerText = `정답: ${storedName}`;
             nameDisplay.style.display = 'block';
 
             const list = isCorrect ? correctSubtitles : wrongSubtitles;
-            const INITIAL_DELAY = 1000; 
-
             list.forEach((text, index) => {
                 setTimeout(() => {
                     const box = document.createElement('div');
@@ -390,18 +489,19 @@
                     container.appendChild(box);
                     document.body.style.animation = "shake 0.3s cubic-bezier(.36,.07,.19,.97) both";
                     setTimeout(() => { document.body.style.animation = ""; }, 300);
-                }, INITIAL_DELAY + (index * 600)); 
+                }, 1000 + (index * 600)); 
             });
 
             layer.style.display = 'flex';
-        }
+        };
 
-        function resetQuiz() {
+        window.resetQuiz = function() {
             document.getElementById('impact-layer').style.display = 'none';
-            body.classList.remove('revealed');
+            document.body.classList.remove('revealed');
             document.getElementById('revealed-name').style.display = 'none';
             failAudio.pause();
-        }
+        };
+
     </script>
 </body>
 </html>
