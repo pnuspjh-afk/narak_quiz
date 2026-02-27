@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>나락퀴즈쇼 - 동아리 편</title>
+    <title>나락퀴즈쇼 - 동아리 편 (Cloud)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&display=swap');
@@ -181,29 +181,42 @@
         }
 
         .loading-spinner {
-            border: 4px solid rgba(255, 255, 255, 0.3);
+            border: 3px solid rgba(255, 255, 255, 0.3);
             border-radius: 50%;
-            border-top: 4px solid #fff;
-            width: 24px;
-            height: 24px;
+            border-top: 3px solid #fff;
+            width: 20px;
+            height: 20px;
             animation: spin 1s linear infinite;
-            display: none;
         }
 
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        #global-loader {
+            position: fixed;
+            inset: 0;
+            background: black;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
     </style>
 </head>
 <body id="main-body">
 
-    <!-- Audio Element -->
+    <div id="global-loader">
+        <div class="loading-spinner mb-4" style="width: 40px; height: 40px;"></div>
+        <p class="narak-font text-xl">클라우드 데이터 불러오는 중...</p>
+    </div>
+
     <audio id="fail-audio"></audio>
 
-    <!-- Setup Area -->
-    <div class="upload-section flex flex-col items-center gap-4" id="setup-area">
-        <h2 class="text-xl narak-font text-yellow-500">퀴즈 데이터 설정</h2>
+    <div class="upload-section flex flex-col items-center gap-4 hidden" id="setup-area">
+        <h2 class="text-xl narak-font text-yellow-500">클라우드 동기화 설정</h2>
         
         <div class="w-full">
             <label class="block text-xs text-gray-400 mb-1">1. 주인공 이름</label>
@@ -211,25 +224,23 @@
         </div>
         
         <div class="w-full">
-            <label class="block text-xs text-gray-400 mb-1">2. 사진 파일 선택</label>
+            <label class="block text-xs text-gray-400 mb-1">2. 사진 파일</label>
             <input type="file" id="file-input" accept="image/*" class="w-full bg-black border border-gray-600 px-3 py-1 rounded text-white text-sm cursor-pointer">
         </div>
 
         <div class="w-full">
-            <label class="block text-xs text-gray-400 mb-1">3. 사운드 파일 선택 (미션실패.mp3)</label>
+            <label class="block text-xs text-gray-400 mb-1">3. 사운드 파일</label>
             <input type="file" id="audio-input" accept="audio/*" class="w-full bg-black border border-gray-600 px-3 py-1 rounded text-white text-sm cursor-pointer">
         </div>
 
         <button id="save-btn" class="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2">
-            <span id="save-text">데이터 저장 및 시작하기</span>
-            <div id="save-spinner" class="loading-spinner"></div>
+            <span id="save-text">클라우드에 저장 후 시작</span>
+            <div id="save-spinner" class="loading-spinner hidden"></div>
         </button>
         
-        <p id="load-msg" class="text-[11px] text-gray-400 text-center">파일 용량이 커도 IndexedDB에 안전하게 저장되어 유지됩니다.</p>
-        <button onclick="clearAllData()" class="text-[10px] text-gray-600 hover:text-red-500 underline">저장된 모든 데이터 삭제하기</button>
+        <p class="text-[11px] text-gray-400 text-center">저장 시 서버에 데이터가 업로드되어 다른 기기에서도 공유됩니다.</p>
     </div>
 
-    <!-- Quiz Screen -->
     <div id="quiz-screen" class="hidden flex flex-col items-center w-full px-4">
         <h1 class="text-xl mb-4 text-gray-500 tracking-widest uppercase narak-font">Narak Quiz Show</h1>
         
@@ -252,10 +263,9 @@
             <button class="btn-option" onclick="processResult(false)">2. 오답</button>
         </div>
         
-        <button onclick="showSetup()" class="mt-8 text-gray-600 text-sm hover:underline">설정 다시하기</button>
+        <button onclick="showSetup()" class="mt-8 text-gray-600 text-sm hover:underline">클라우드 데이터 수정하기</button>
     </div>
 
-    <!-- Impact Overlay -->
     <div id="impact-layer" class="impact-overlay" onclick="resetQuiz()">
         <div id="main-impact-text" class="shock-text narak-font">충격!!!</div>
         <div id="revealed-name" class="identity-label narak-font"></div>
@@ -264,113 +274,76 @@
     </div>
 
     <script type="module">
-        // IndexedDB Wrapper for large file storage
-        const DB_NAME = 'NarakQuizDB';
-        const DB_VERSION = 1;
-        const STORE_NAME = 'quiz_assets';
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
 
-        function openDB() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(DB_NAME, DB_VERSION);
-                request.onupgradeneeded = (e) => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains(STORE_NAME)) {
-                        db.createObjectStore(STORE_NAME);
-                    }
-                };
-                request.onsuccess = (e) => resolve(e.target.result);
-                request.onerror = (e) => reject(e.target.error);
-            });
-        }
+        // Firebase Config
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'narak-quiz-default';
 
-        async function saveToDB(key, data) {
-            const db = await openDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(STORE_NAME, 'readwrite');
-                const store = tx.objectStore(STORE_NAME);
-                store.put(data, key);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-            });
-        }
-
-        async function getFromDB(key) {
-            const db = await openDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(STORE_NAME, 'readonly');
-                const store = tx.objectStore(STORE_NAME);
-                const request = store.get(key);
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-            });
-        }
-
-        async function clearDB() {
-            const db = await openDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(STORE_NAME, 'readwrite');
-                const store = tx.objectStore(STORE_NAME);
-                store.clear();
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-            });
-        }
-
-        // Global State
+        // State
+        let currentUser = null;
         let currentScale = 3.5;
         const targetImg = document.getElementById('target-image');
         const failAudio = document.getElementById('fail-audio');
         const setupArea = document.getElementById('setup-area');
         const quizScreen = document.getElementById('quiz-screen');
-        const saveSpinner = document.getElementById('save-spinner');
-        const saveText = document.getElementById('save-text');
-        const saveBtn = document.getElementById('save-btn');
+        const globalLoader = document.getElementById('global-loader');
 
-        // Init on load
-        window.addEventListener('DOMContentLoaded', async () => {
-            // 로딩 메시지 표시용
-            const loadMsg = document.getElementById('load-msg');
-            loadMsg.innerText = "데이터를 불러오는 중입니다...";
+        // Initial Auth & Data Load
+        const init = async () => {
+            try {
+                // RULE 3: Auth Before Queries
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
 
-            const name = await getFromDB('target_name');
-            const img = await getFromDB('target_image');
-            const audio = await getFromDB('target_audio');
-
-            if (name && img) {
-                document.getElementById('target-name').value = name;
-                await applyData(name, img, audio);
-                startQuiz();
-            } else {
-                loadMsg.innerText = "설정된 데이터가 없습니다. 새로 등록해주세요.";
-            }
-        });
-
-        async function applyData(name, img, audio) {
-            if (img) targetImg.src = img;
-            if (audio) {
-                failAudio.src = audio;
-                failAudio.load();
-            }
-        }
-
-        function startQuiz() {
-            setupArea.style.display = 'none';
-            quizScreen.classList.remove('hidden');
-        }
-
-        window.showSetup = function() {
-            setupArea.style.display = 'flex';
-            quizScreen.classList.add('hidden');
-        };
-
-        window.clearAllData = async function() {
-            if(confirm("모든 사진과 사운드 데이터를 영구적으로 삭제하시겠습니까?")) {
-                await clearDB();
-                location.reload();
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        currentUser = user;
+                        await loadFromCloud();
+                    }
+                });
+            } catch (err) {
+                console.error("Auth/Init Error:", err);
+                globalLoader.innerHTML = "<p class='text-red-500'>연결 실패. 페이지를 새로고침 해주세요.</p>";
             }
         };
 
-        const saveAllData = async function() {
+        const loadFromCloud = async () => {
+            // FIX: Ensure even number of segments (6 segments: artifacts / {appId} / public / data / config / quizConfig)
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'quizConfig');
+            try {
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    document.getElementById('target-name').value = data.name || '';
+                    if (data.image) targetImg.src = data.image;
+                    if (data.audio) {
+                        failAudio.src = data.audio;
+                        failAudio.load();
+                    }
+                    startQuiz();
+                } else {
+                    showSetup();
+                }
+            } catch (err) {
+                console.error("Data Load Error:", err);
+                showSetup();
+            } finally {
+                globalLoader.style.display = 'none';
+            }
+        };
+
+        async function saveToCloud() {
+            if (!currentUser) return;
+
             const nameInput = document.getElementById('target-name').value;
             const imgFile = document.getElementById('file-input').files[0];
             const audioFile = document.getElementById('audio-input').files[0];
@@ -380,39 +353,57 @@
                 return;
             }
 
-            saveSpinner.style.display = 'block';
-            saveText.innerText = "파일 인코딩 및 저장 중...";
+            const saveBtn = document.getElementById('save-btn');
+            const saveSpinner = document.getElementById('save-spinner');
+            const saveText = document.getElementById('save-text');
+
+            saveBtn.disabled = true;
+            saveSpinner.classList.remove('hidden');
+            saveText.innerText = "클라우드 저장 중...";
 
             try {
-                // Save Name
-                await saveToDB('target_name', nameInput);
-
-                // Process and Save Image
                 let imgData = targetImg.src;
-                if (imgFile) {
-                    imgData = await fileToBase64(imgFile);
-                    await saveToDB('target_image', imgData);
-                }
+                if (imgFile) imgData = await fileToBase64(imgFile);
 
-                // Process and Save Audio
                 let audioData = failAudio.src;
-                if (audioFile) {
-                    audioData = await fileToBase64(audioFile);
-                    await saveToDB('target_audio', audioData);
-                }
+                if (audioFile) audioData = await fileToBase64(audioFile);
 
-                await applyData(nameInput, imgData, audioData);
+                // FIX: Path segments correction
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'quizConfig');
+                await setDoc(docRef, {
+                    name: nameInput,
+                    image: imgData,
+                    audio: audioData,
+                    updatedAt: Date.now()
+                });
+
+                targetImg.src = imgData;
+                failAudio.src = audioData;
                 startQuiz();
             } catch (err) {
-                console.error(err);
-                alert("저장 중 오류가 발생했습니다. 브라우저 저장 용량 초과일 수 있습니다.");
+                console.error("Save Error:", err);
+                alert("저장 실패: 파일 용량이 너무 큽니다. (약 1MB 이하의 작은 파일을 사용해주세요)");
             } finally {
-                saveSpinner.style.display = 'none';
-                saveText.innerText = "데이터 저장 및 시작하기";
+                saveBtn.disabled = false;
+                saveSpinner.classList.add('hidden');
+                saveText.innerText = "클라우드에 저장 후 시작";
             }
-        };
+        }
 
-        if (saveBtn) saveBtn.onclick = saveAllData;
+        document.getElementById('save-btn').onclick = saveToCloud;
+
+        function startQuiz() {
+            setupArea.classList.add('hidden');
+            setupArea.style.display = 'none';
+            quizScreen.classList.remove('hidden');
+        }
+
+        window.showSetup = function() {
+            setupArea.classList.remove('hidden');
+            setupArea.style.display = 'flex';
+            quizScreen.classList.add('hidden');
+            globalLoader.style.display = 'none';
+        };
 
         function fileToBase64(file) {
             return new Promise((resolve, reject) => {
@@ -423,7 +414,6 @@
             });
         }
 
-        // --- UI Logic ---
         window.adjustZoom = function(amount) {
             currentScale += amount;
             if (currentScale < 1) currentScale = 1;
@@ -454,15 +444,16 @@
 
         const wrongSubtitles = [
             "[충격! 회장, 1년 같이 활동한 부원 얼굴도 몰라...]",
-            "[애정도 0% 확인. 회장에게 부원은 그저 배경일 뿐?]",
-            "[이미 마음은 사퇴 결정? 부원 이름조차 가물가물]",
-            "[사실은 부원들을 ATM처럼 번호표로 외우고 있는 중]"
+            "[실망! 회장에게 부원은 그저 '머릿수'일 뿐...]",
+            "[사실은 부원들을 '노비 1, 2, 3'으로 부르고 있었다?]",
+            "[분노! 부원 이름 외울 시간에 자기 셀카나 찍는 리더]"
         ];
 
         const correctSubtitles = [
-            "[경악! 특정 부원의 눈만 유심히 관찰해왔나?]",
-            "[회장의 은밀한 사심 포착? 이목구비 집착남 등극]",
-            "[애정도 200% 달성! 부원 관찰이 일상인 참리더]"
+            "[경악! 특정 부원의 홍채 패턴까지 외우고 있어...]",
+            "[소름! 회장, 사실은 부원들 몰래 CCTV 감시 중?]",
+            "[단독] '동아리 사랑'인가 '개인 사심'인가? 선 넘은 집착",
+            "[발각] 부원 관찰이 취미? 리더의 은밀한 사생활"
         ];
 
         window.processResult = function(isCorrect) {
@@ -513,6 +504,7 @@
             failAudio.pause();
         };
 
+        init();
     </script>
 </body>
 </html>
