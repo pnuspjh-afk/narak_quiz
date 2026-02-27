@@ -211,6 +211,7 @@
     <div id="global-loader">
         <div class="loading-spinner mb-4" style="width: 40px; height: 40px;"></div>
         <p class="narak-font text-xl">클라우드 데이터 불러오는 중...</p>
+        <button id="skip-loader" class="mt-8 text-xs text-gray-500 underline hidden">계속 로딩되면 클릭 (설정 페이지로 이동)</button>
     </div>
 
     <audio id="fail-audio"></audio>
@@ -238,6 +239,7 @@
             <div id="save-spinner" class="loading-spinner hidden"></div>
         </button>
         
+        <p id="env-error-msg" class="text-[11px] text-red-400 text-center hidden">Firebase 설정값이 없습니다. Canvas 밖에서는 로컬 모드로 동작할 수 있습니다.</p>
         <p class="text-[11px] text-gray-400 text-center">저장 시 서버에 데이터가 업로드되어 다른 기기에서도 공유됩니다.</p>
     </div>
 
@@ -278,12 +280,25 @@
         import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
 
-        // Firebase Config
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'narak-quiz-default';
+        // Firebase Config Check
+        let db, auth, appId;
+        let isFirebaseAvailable = false;
+
+        try {
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'narak-quiz-default';
+                isFirebaseAvailable = true;
+            } else {
+                console.warn("Firebase configuration not found. Running in standalone mode.");
+                document.getElementById('env-error-msg').classList.remove('hidden');
+            }
+        } catch (e) {
+            console.error("Firebase Init Fail:", e);
+        }
 
         // State
         let currentUser = null;
@@ -293,11 +308,30 @@
         const setupArea = document.getElementById('setup-area');
         const quizScreen = document.getElementById('quiz-screen');
         const globalLoader = document.getElementById('global-loader');
+        const skipLoaderBtn = document.getElementById('skip-loader');
+
+        // 3초 후에도 로딩이 안 끝나면 수동 넘기기 버튼 활성화
+        setTimeout(() => {
+            if (globalLoader.style.display !== 'none') {
+                skipLoaderBtn.classList.remove('hidden');
+            }
+        }, 3000);
+
+        skipLoaderBtn.onclick = () => {
+            globalLoader.style.display = 'none';
+            showSetup();
+        };
 
         // Initial Auth & Data Load
         const init = async () => {
+            if (!isFirebaseAvailable) {
+                // Firebase가 없으면 바로 설정창 노출
+                globalLoader.style.display = 'none';
+                showSetup();
+                return;
+            }
+
             try {
-                // RULE 3: Auth Before Queries
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
@@ -312,12 +346,14 @@
                 });
             } catch (err) {
                 console.error("Auth/Init Error:", err);
-                globalLoader.innerHTML = "<p class='text-red-500'>연결 실패. 페이지를 새로고침 해주세요.</p>";
+                globalLoader.style.display = 'none';
+                showSetup();
             }
         };
 
         const loadFromCloud = async () => {
-            // FIX: Ensure even number of segments (6 segments: artifacts / {appId} / public / data / config / quizConfig)
+            if (!isFirebaseAvailable) return;
+
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'quizConfig');
             try {
                 const docSnap = await getDoc(docRef);
@@ -342,14 +378,28 @@
         };
 
         async function saveToCloud() {
-            if (!currentUser) return;
-
             const nameInput = document.getElementById('target-name').value;
             const imgFile = document.getElementById('file-input').files[0];
             const audioFile = document.getElementById('audio-input').files[0];
 
             if (!nameInput) {
                 alert("주인공 이름을 입력해주세요.");
+                return;
+            }
+
+            // 이미지나 오디오 데이터 처리
+            let imgData = targetImg.src;
+            if (imgFile) imgData = await fileToBase64(imgFile);
+
+            let audioData = failAudio.src;
+            if (audioFile) audioData = await fileToBase64(audioFile);
+
+            targetImg.src = imgData;
+            failAudio.src = audioData;
+
+            if (!isFirebaseAvailable || !currentUser) {
+                // 로컬 모드로 그냥 시작
+                startQuiz();
                 return;
             }
 
@@ -362,13 +412,6 @@
             saveText.innerText = "클라우드 저장 중...";
 
             try {
-                let imgData = targetImg.src;
-                if (imgFile) imgData = await fileToBase64(imgFile);
-
-                let audioData = failAudio.src;
-                if (audioFile) audioData = await fileToBase64(audioFile);
-
-                // FIX: Path segments correction
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'quizConfig');
                 await setDoc(docRef, {
                     name: nameInput,
@@ -376,13 +419,11 @@
                     audio: audioData,
                     updatedAt: Date.now()
                 });
-
-                targetImg.src = imgData;
-                failAudio.src = audioData;
                 startQuiz();
             } catch (err) {
                 console.error("Save Error:", err);
-                alert("저장 실패: 파일 용량이 너무 큽니다. (약 1MB 이하의 작은 파일을 사용해주세요)");
+                alert("클라우드 저장 실패: 파일 용량이 너무 큽니다. (약 1MB 이하 권장) 하지만 게임은 그대로 시작합니다.");
+                startQuiz();
             } finally {
                 saveBtn.disabled = false;
                 saveSpinner.classList.add('hidden');
@@ -393,6 +434,11 @@
         document.getElementById('save-btn').onclick = saveToCloud;
 
         function startQuiz() {
+            if (!targetImg.src || targetImg.src.includes('window.location')) {
+                alert("사진을 먼저 등록해주세요.");
+                showSetup();
+                return;
+            }
             setupArea.classList.add('hidden');
             setupArea.style.display = 'none';
             quizScreen.classList.remove('hidden');
@@ -442,6 +488,24 @@
 
         window.addEventListener('mouseup', () => { isDragging = false; });
 
+        // 터치 지원 (모바일)
+        targetImg.addEventListener('touchstart', (e) => {
+            if(document.body.classList.contains('revealed')) return;
+            isDragging = true;
+            startX = e.touches[0].clientX - imgLeft;
+            startY = e.touches[0].clientY - imgTop;
+        });
+
+        window.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            imgLeft = e.touches[0].clientX - startX;
+            imgTop = e.touches[0].clientY - startY;
+            targetImg.style.marginLeft = `${imgLeft}px`;
+            targetImg.style.marginTop = `${imgTop}px`;
+        });
+
+        window.addEventListener('touchend', () => { isDragging = false; });
+
         const wrongSubtitles = [
             "[충격! 회장, 1년 같이 활동한 부원 얼굴도 몰라...]",
             "[실망! 회장에게 부원은 그저 '머릿수'일 뿐...]",
@@ -466,7 +530,7 @@
             container.innerHTML = '';
             document.body.classList.add('revealed');
 
-            if (failAudio.src && failAudio.src.startsWith('data:')) {
+            if (failAudio.src && failAudio.src.includes('data:')) {
                 failAudio.currentTime = 0;
                 failAudio.play().catch(console.error);
             }
